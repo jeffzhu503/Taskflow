@@ -1,3 +1,5 @@
+import logging
+
 from telemetry import setup_telemetry
 
 setup_telemetry()
@@ -7,6 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from routers import repo, issues, pulls, labels
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="TaskFlow GitHub Bridge", version="1.0.0")
 
@@ -25,6 +29,8 @@ app.include_router(labels.router, prefix="/api")
 
 FastAPIInstrumentor.instrument_app(app)
 HTTPXClientInstrumentor().instrument()
+
+logger.info("TaskFlow backend started", extra={"otel_enabled": True})
 
 
 @app.get("/")

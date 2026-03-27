@@ -1,3 +1,4 @@
+import logging
 import re
 import time
 from typing import Any
@@ -7,6 +8,7 @@ from config import settings
 from github.metrics import errors_total, request_duration, requests_total
 
 REST_BASE = "https://api.github.com"
+logger = logging.getLogger(__name__)
 
 _OWNER_REPO_RE = re.compile(r"/repos/[^/]+/[^/]+")
 _NUMERIC_ID_RE = re.compile(r"/\d+")
@@ -33,6 +35,8 @@ async def rest_request(method: str, path: str, json_body: dict[str, Any] | None 
         "X-GitHub-Api-Version": "2022-11-28",
     }
 
+    logger.debug("GitHub REST request started", extra={"operation": operation})
+
     start = time.perf_counter()
     try:
         async with httpx.AsyncClient() as client:
@@ -48,6 +52,10 @@ async def rest_request(method: str, path: str, json_body: dict[str, Any] | None 
         hit_attrs = {**attrs, "http.status_code": str(resp.status_code)}
         request_duration.record(elapsed, hit_attrs)
         requests_total.add(1, hit_attrs)
+        logger.info(
+            "GitHub REST request completed",
+            extra={"operation": operation, "status_code": resp.status_code, "duration_ms": round(elapsed * 1000, 2)},
+        )
 
         # Some endpoints (e.g. merge) return 204 No Content
         if resp.status_code == 204 or not resp.content:
@@ -58,4 +66,9 @@ async def rest_request(method: str, path: str, json_body: dict[str, Any] | None 
         err_attrs = {**attrs, "error.type": type(exc).__name__}
         request_duration.record(elapsed, err_attrs)
         errors_total.add(1, err_attrs)
+        logger.error(
+            "GitHub REST request failed",
+            extra={"operation": operation, "error.type": type(exc).__name__, "duration_ms": round(elapsed * 1000, 2)},
+            exc_info=True,
+        )
         raise
