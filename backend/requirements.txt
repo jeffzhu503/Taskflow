@@ -3,3 +3,9 @@ uvicorn[standard]>=0.29.0
 httpx>=0.27.0
 python-dotenv>=1.0.0
 pydantic-settings>=2.2.0
+
+# OpenTelemetry — traces, metrics, logs → OTLP HTTP
+opentelemetry-sdk>=1.25.0
+opentelemetry-exporter-otlp-proto-http>=1.25.0
+opentelemetry-instrumentation-fastapi>=0.46b0
+opentelemetry-instrumentation-httpx>=0.46b0
