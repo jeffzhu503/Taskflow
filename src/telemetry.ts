@@ -56,9 +56,6 @@ export function setupTelemetry(): void {
   logs.setGlobalLoggerProvider(loggerProvider);
 
   // ── Auto-instrumentations ─────────────────────────────────────────────────
-  // Instruments document load timing, fetch, and XHR calls automatically.
-  // Set VITE_OTEL_ENDPOINT in .env.local to point at your OTel Collector.
-  // The collector must allow CORS from the frontend origin for browser exports.
   registerInstrumentations({
     instrumentations: [
       getWebAutoInstrumentations({

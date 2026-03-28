@@ -1,18 +1,33 @@
 import logging
+from contextlib import asynccontextmanager
 
 from telemetry import setup_telemetry
 
 setup_telemetry()
 
+# Instrument httpx before routers are imported so module-level AsyncClient
+# instances in graphql_client.py and rest_client.py are patched at creation time.
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+HTTPXClientInstrumentor().instrument()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from routers import repo, issues, pulls, labels
+from github import graphql_client, rest_client
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="TaskFlow GitHub Bridge", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("TaskFlow backend started")
+    yield
+    await graphql_client.close()
+    await rest_client.close()
+
+
+app = FastAPI(title="TaskFlow GitHub Bridge", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,9 +43,6 @@ app.include_router(pulls.router, prefix="/api")
 app.include_router(labels.router, prefix="/api")
 
 FastAPIInstrumentor.instrument_app(app)
-HTTPXClientInstrumentor().instrument()
-
-logger.info("TaskFlow backend started", extra={"otel_enabled": True})
 
 
 @app.get("/")
