@@ -45,12 +45,13 @@ def record_error(
     elapsed: float,
     exc: Exception,
 ) -> None:
-    attrs = {"api.transport": transport, "operation": operation, "error.type": type(exc).__name__}
+    error_type = type(exc).__name__
+    attrs = {"api.transport": transport, "operation": operation, "error.type": error_type}
     request_duration.record(elapsed, attrs)
     errors_total.add(1, attrs)
     logger.error(
         "GitHub %s request failed",
         transport,
-        extra={"operation": operation, "error.type": type(exc).__name__, "duration_ms": round(elapsed * 1000, 2)},
+        extra={"operation": operation, "error.type": error_type, "duration_ms": round(elapsed * 1000, 2)},
         exc_info=True,
     )

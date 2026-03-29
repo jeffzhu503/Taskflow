@@ -10,7 +10,7 @@ GQL_URL = "https://api.github.com/graphql"
 
 _OPERATION_RE = re.compile(r"query\s+(\w+)")
 logger = logging.getLogger(__name__)
-_client = httpx.AsyncClient()
+_client = httpx.AsyncClient(timeout=30.0)
 
 
 async def close() -> None:

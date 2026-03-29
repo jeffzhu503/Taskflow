@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -23,8 +24,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("TaskFlow backend started")
     yield
-    await graphql_client.close()
-    await rest_client.close()
+    await asyncio.gather(graphql_client.close(), rest_client.close())
 
 
 app = FastAPI(title="TaskFlow GitHub Bridge", version="1.0.0", lifespan=lifespan)

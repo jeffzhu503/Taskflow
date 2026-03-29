@@ -9,7 +9,7 @@ from github.metrics import record_error, record_success
 
 REST_BASE = "https://api.github.com"
 logger = logging.getLogger(__name__)
-_client = httpx.AsyncClient()
+_client = httpx.AsyncClient(timeout=30.0)
 
 _OWNER_REPO_RE = re.compile(r"/repos/[^/]+/[^/]+")
 _NUMERIC_ID_RE = re.compile(r"/\d+")
