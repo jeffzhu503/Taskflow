@@ -198,6 +198,7 @@ class Settings(BaseSettings):
     openai_api_key: str
     anthropic_api_key: str
     llm_model: str = "claude-sonnet-4-6"
+    rag_db_path: str = str(Path.home() / ".taskflow" / "rag-db")
 
     # OpenTelemetry
     otel_enabled: bool = True
@@ -238,6 +239,8 @@ Append to `backend/.env.example`:
 OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 LLM_MODEL=claude-sonnet-4-6
+# RAG_DB_PATH defaults to C:\Users\<you>\.taskflow\rag-db — override if needed
+# RAG_DB_PATH=C:\Users\SDSA\.taskflow\rag-db
 ```
 
 - [ ] **Step 6: Add OPENAI_API_KEY and ANTHROPIC_API_KEY to your .env**
@@ -575,7 +578,17 @@ git commit -m "feat: add RAG embedder with OpenAI text-embedding-3-small"
 
 ```python
 # backend/tests/rag/test_retriever.py
+import tempfile
+import chromadb
 from rag.retriever import DocumentStore
+
+
+def make_store() -> DocumentStore:
+    """Each test gets its own isolated in-memory store."""
+    store = DocumentStore.__new__(DocumentStore)
+    store._client = chromadb.Client()  # in-memory for tests
+    store._seen = set()
+    return store
 
 
 def make_embedding(seed: float, dim: int = 8) -> list[float]:
@@ -584,18 +597,18 @@ def make_embedding(seed: float, dim: int = 8) -> list[float]:
 
 
 def test_has_returns_false_before_add():
-    store = DocumentStore()
+    store = make_store()
     assert store.has("abc123") is False
 
 
 def test_has_returns_true_after_add():
-    store = DocumentStore()
+    store = make_store()
     store.add_chunks("abc123", ["hello world"], [make_embedding(0.1)])
     assert store.has("abc123") is True
 
 
 def test_query_returns_relevant_chunks():
-    store = DocumentStore()
+    store = make_store()
     chunks = ["Review the Q2 budget.", "Schedule team standup."]
     embeddings = [make_embedding(0.1), make_embedding(0.9)]
     store.add_chunks("file1", chunks, embeddings)
@@ -604,13 +617,13 @@ def test_query_returns_relevant_chunks():
 
 
 def test_query_on_unknown_hash_returns_empty():
-    store = DocumentStore()
+    store = make_store()
     results = store.query("nonexistent", make_embedding(0.5), top_k=5)
     assert results == []
 
 
 def test_add_same_hash_twice_does_not_duplicate():
-    store = DocumentStore()
+    store = make_store()
     store.add_chunks("dup", ["only once"], [make_embedding(0.5)])
     store.add_chunks("dup", ["only once"], [make_embedding(0.5)])
     results = store.query("dup", make_embedding(0.5), top_k=10)
@@ -632,11 +645,17 @@ Expected: `ModuleNotFoundError: No module named 'rag.retriever'`
 # backend/rag/retriever.py
 import chromadb
 from dataclasses import dataclass, field
+from pathlib import Path
+from config import settings
 
 
 @dataclass
 class DocumentStore:
-    _client: chromadb.Client = field(default_factory=chromadb.Client)
+    _client: chromadb.PersistentClient = field(
+        default_factory=lambda: chromadb.PersistentClient(
+            path=str(Path(settings.rag_db_path))
+        )
+    )
     _seen: set[str] = field(default_factory=set)
 
     def _collection(self, file_hash: str) -> chromadb.Collection:
@@ -682,7 +701,8 @@ class DocumentStore:
         return file_hash in self._seen
 
 
-# Module-level singleton used by the router
+# Module-level singleton used by the router.
+# On first import, creates ~/.taskflow/rag-db/ if it doesn't exist.
 store = DocumentStore()
 ```
 
