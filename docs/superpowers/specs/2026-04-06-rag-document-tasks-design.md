@@ -14,15 +14,15 @@ Add a Documents panel to Taskflow that lets users point at a Word or PDF file on
 ## Scope
 
 **In scope:**
-- On-demand single-file analysis (`.docx`, `.pdf`, `.txt`)
-- Browser native file picker (`<input type="file">`) — opens standard Windows "Open" dialog
+- On-demand file analysis (`.docx`, `.pdf`, `.txt`) — single file or entire folder
+- Browser native file picker: "Choose file" (`<input type="file">`) and "Choose folder" (`<input type="file" webkitdirectory>`)
+- Multi-file pipeline: each file runs through RAG independently, task lists merged into one result
 - Light RAG pipeline via ChromaDB + OpenAI embeddings + Claude/GPT-4o generation
-- Suggested task list with checkboxes, one-click add to todos
+- Suggested task list with checkboxes grouped by source file, one-click add to todos
 - New "Documents" tab in the Taskflow nav
 
 **Out of scope (Phase 2):**
 - Background folder watching / continuous indexing
-- Multi-file batch analysis
 - Semantic search across indexed documents
 
 ---
@@ -32,20 +32,21 @@ Add a Documents panel to Taskflow that lets users point at a Word or PDF file on
 ### Data Flow
 
 ```
-User clicks "Choose file" (Documents panel)
-  → browser <input type="file"> opens Windows "Open" dialog
-  → user picks .docx / .pdf / .txt
-  → useDocuments hook reads File object (name + bytes)
-  → POST /api/rag/analyze  multipart/form-data  { file: <bytes> }
-  → Backend pipeline:
+User clicks "Choose file" or "Choose folder" (Documents panel)
+  → browser picker opens Windows dialog
+  → user picks one .docx/.pdf/.txt  OR  a folder (all supported files collected recursively)
+  → useDocuments hook holds File[] array
+  → POST /api/rag/analyze  multipart/form-data  { files: <file[]> }
+  → Backend — for each file:
       ① Extract text       (python-docx / pypdf / plain text)
       ② Chunk text         (500-token chunks, 50-token overlap)
       ③ Embed chunks       (OpenAI text-embedding-3-small)
       ④ Store in ChromaDB  (in-memory, keyed by SHA-256 of file bytes)
       ⑤ Retrieve top chunks (task-extraction similarity query)
       ⑥ Generate tasks     (Claude claude-sonnet-4-6 or GPT-4o)
-  → Returns { filename, tasks: [{ title, category, source_hint }] }
-  → DocumentPanel renders checkboxes
+  → Merge task lists across all files
+  → Returns { files_processed: number, tasks: [{ title, category, source_hint, filename }] }
+  → DocumentPanel renders checkboxes grouped by filename
   → User selects → useTodos.addTodo() for each
 ```
 
@@ -74,7 +75,7 @@ Chunking + retrieval handles real-world document sizes that exceed LLM context w
 | File | Change |
 |------|--------|
 | `backend/config.py` | Add `OPENAI_API_KEY: str` and `LLM_MODEL: str = "claude-sonnet-4-6"` |
-| `backend/models.py` | Add `SuggestedTask`, `AnalyzeResponse` (request uses FastAPI `UploadFile`, no Pydantic model needed) |
+| `backend/models.py` | Add `SuggestedTask` (includes `filename` field), `AnalyzeResponse` (request uses FastAPI `List[UploadFile]`, no Pydantic model needed) |
 | `backend/main.py` | Register `rag` router under `/api` |
 | `backend/requirements.txt` | Add `python-docx`, `pypdf`, `chromadb`, `tiktoken`, `openai` |
 
@@ -85,19 +86,20 @@ POST /api/rag/analyze
 Content-Type: multipart/form-data
 
 Request:
-  file: <binary file upload>   (.docx, .pdf, or .txt — max 50MB)
+  files: <one or more binary file uploads>   (.docx, .pdf, or .txt — max 50MB each)
 
 Response 200:
 {
-  "filename": "Q2-report.docx",
+  "files_processed": 2,
   "tasks": [
-    { "title": "Review Q2 budget variance with finance team", "category": "work", "source_hint": "from page 3" },
-    { "title": "Update headcount projections for H2", "category": "work", "source_hint": "from page 5" }
+    { "title": "Review Q2 budget variance with finance team", "category": "work", "source_hint": "from page 3", "filename": "Q2-report.docx" },
+    { "title": "Update headcount projections for H2", "category": "work", "source_hint": "from page 5", "filename": "Q2-report.docx" },
+    { "title": "Follow up on action items from team sync", "category": "work", "source_hint": "from section 1", "filename": "meeting-notes.docx" }
   ]
 }
 
 Response 400: { "detail": "Unsupported file type. Accepted: .docx, .pdf, .txt" }
-Response 413: { "detail": "File too large. Maximum size is 50MB" }
+Response 413: { "detail": "File too large. Maximum size is 50MB per file" }
 Response 500: { "detail": "Embedding or generation failed" }
 ```
 
@@ -115,9 +117,9 @@ You are a task extraction assistant. Given excerpts from a work document, identi
 
 | File | Responsibility |
 |------|---------------|
-| `src/rag/client.ts` | `analyzeDocument(file: File): Promise<AnalyzeResponse>` — POST /api/rag/analyze as multipart |
-| `src/hooks/useDocuments.ts` | State: `file`, `loading`, `tasks`, `error`, `selectedIds`; actions: `analyze()`, `toggleTask()`, `addSelected()` |
-| `src/components/DocumentPanel.tsx` | Renders `<input type="file">` picker + Analyze button; loading spinner; task checklist; "Add N selected tasks" button |
+| `src/rag/client.ts` | `analyzeDocuments(files: File[]): Promise<AnalyzeResponse>` — POST /api/rag/analyze as multipart |
+| `src/hooks/useDocuments.ts` | State: `files`, `loading`, `tasks`, `error`, `selectedIds`; actions: `analyze()`, `toggleTask()`, `addSelected()` |
+| `src/components/DocumentPanel.tsx` | Renders "Choose file" + "Choose folder" buttons; file list preview; Analyze button; loading spinner; task checklist grouped by filename; "Add N selected tasks" button |
 
 ### Modified files
 
@@ -128,14 +130,22 @@ You are a task extraction assistant. Given excerpts from a work document, identi
 
 ### File picker
 
-Uses the browser's built-in `<input type="file" accept=".docx,.pdf,.txt">`. On Windows this opens the standard Windows "Open" dialog — no Electron or native integration needed. The selected file is held as a browser `File` object and uploaded as multipart to the backend; the full file path is never needed.
+Two buttons, both using standard browser file inputs — no Electron needed:
+
+| Button | Input attribute | Behaviour |
+|--------|----------------|-----------|
+| "Choose file" | `<input type="file" accept=".docx,.pdf,.txt" multiple>` | Windows "Open" dialog; one or more files |
+| "Choose folder" | `<input type="file" webkitdirectory>` | Windows folder picker; all supported files inside collected recursively |
+
+Both yield a `FileList` of `File` objects. Unsupported file types inside a folder are silently skipped client-side before upload.
 
 ### Component states
 
-1. **Empty** — "Choose file" button, accepted formats label, placeholder message
-2. **Loading** — spinner, path shown, button disabled
-3. **Results** — task list with checkboxes, source hints, "Add N selected tasks" button, "Select all" toggle
-4. **Error** — inline error message, path retained for retry
+1. **Empty** — "Choose file" + "Choose folder" buttons, accepted formats label, placeholder message
+2. **Files selected** — list of selected filenames with count (e.g. "3 files selected"), Analyze button enabled
+3. **Loading** — progress indicator ("Analyzing 3 files…"), buttons disabled
+4. **Results** — task list with checkboxes grouped by filename, "Add N selected tasks" button, "Select all" toggle
+5. **Error** — inline error message, file selection retained for retry
 
 ---
 
