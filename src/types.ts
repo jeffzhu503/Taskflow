@@ -9,3 +9,17 @@ export interface Todo {
 }
 
 export type FilterType = 'all' | 'pending' | 'done' | 'work' | 'personal' | 'urgent';
+
+// ── RAG ──────────────────────────────────────────────────────────────────────
+
+export interface RagTask {
+  title: string;
+  category: Category;
+  source_hint: string;
+  filename: string;
+}
+
+export interface AnalyzeResponse {
+  files_processed: number;
+  tasks: RagTask[];
+}
