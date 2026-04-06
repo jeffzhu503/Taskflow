@@ -28,3 +28,9 @@ def test_chunks_have_overlap():
 def test_empty_text_returns_empty_list():
     chunks = chunk_text("", max_tokens=500, overlap=50)
     assert chunks == []
+
+
+def test_invalid_overlap_raises():
+    import pytest
+    with pytest.raises(ValueError, match="overlap"):
+        chunk_text("some text", max_tokens=10, overlap=10)

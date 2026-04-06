@@ -2,6 +2,8 @@ import tiktoken
 
 
 def chunk_text(text: str, max_tokens: int = 500, overlap: int = 50) -> list[str]:
+    if overlap >= max_tokens:
+        raise ValueError(f"overlap ({overlap}) must be less than max_tokens ({max_tokens})")
     if not text.strip():
         return []
     enc = tiktoken.get_encoding("cl100k_base")
