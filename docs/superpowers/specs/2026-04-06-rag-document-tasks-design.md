@@ -15,7 +15,7 @@ Add a Documents panel to Taskflow that lets users point at a Word or PDF file on
 
 **In scope:**
 - On-demand single-file analysis (`.docx`, `.pdf`, `.txt`)
-- File path input supporting local paths and OneDrive/SharePoint-synced paths
+- Browser native file picker (`<input type="file">`) — opens standard Windows "Open" dialog
 - Light RAG pipeline via ChromaDB + OpenAI embeddings + Claude/GPT-4o generation
 - Suggested task list with checkboxes, one-click add to todos
 - New "Documents" tab in the Taskflow nav
@@ -32,14 +32,16 @@ Add a Documents panel to Taskflow that lets users point at a Word or PDF file on
 ### Data Flow
 
 ```
-User inputs file path (Documents panel)
-  → useDocuments hook
-  → POST /api/rag/analyze  { path }
+User clicks "Choose file" (Documents panel)
+  → browser <input type="file"> opens Windows "Open" dialog
+  → user picks .docx / .pdf / .txt
+  → useDocuments hook reads File object (name + bytes)
+  → POST /api/rag/analyze  multipart/form-data  { file: <bytes> }
   → Backend pipeline:
       ① Extract text       (python-docx / pypdf / plain text)
       ② Chunk text         (500-token chunks, 50-token overlap)
       ③ Embed chunks       (OpenAI text-embedding-3-small)
-      ④ Store in ChromaDB  (in-memory, keyed by SHA-256 file hash)
+      ④ Store in ChromaDB  (in-memory, keyed by SHA-256 of file bytes)
       ⑤ Retrieve top chunks (task-extraction similarity query)
       ⑥ Generate tasks     (Claude claude-sonnet-4-6 or GPT-4o)
   → Returns { filename, tasks: [{ title, category, source_hint }] }
@@ -72,7 +74,7 @@ Chunking + retrieval handles real-world document sizes that exceed LLM context w
 | File | Change |
 |------|--------|
 | `backend/config.py` | Add `OPENAI_API_KEY: str` and `LLM_MODEL: str = "claude-sonnet-4-6"` |
-| `backend/models.py` | Add `AnalyzeRequest`, `SuggestedTask`, `AnalyzeResponse` |
+| `backend/models.py` | Add `SuggestedTask`, `AnalyzeResponse` (request uses FastAPI `UploadFile`, no Pydantic model needed) |
 | `backend/main.py` | Register `rag` router under `/api` |
 | `backend/requirements.txt` | Add `python-docx`, `pypdf`, `chromadb`, `tiktoken`, `openai` |
 
@@ -80,12 +82,10 @@ Chunking + retrieval handles real-world document sizes that exceed LLM context w
 
 ```
 POST /api/rag/analyze
-Content-Type: application/json
+Content-Type: multipart/form-data
 
 Request:
-{
-  "path": "C:\\Users\\SDSA\\Documents\\Work\\Q2-report.docx"
-}
+  file: <binary file upload>   (.docx, .pdf, or .txt — max 50MB)
 
 Response 200:
 {
@@ -96,7 +96,8 @@ Response 200:
   ]
 }
 
-Response 400: { "detail": "File not found or unsupported type" }
+Response 400: { "detail": "Unsupported file type. Accepted: .docx, .pdf, .txt" }
+Response 413: { "detail": "File too large. Maximum size is 50MB" }
 Response 500: { "detail": "Embedding or generation failed" }
 ```
 
@@ -114,9 +115,9 @@ You are a task extraction assistant. Given excerpts from a work document, identi
 
 | File | Responsibility |
 |------|---------------|
-| `src/rag/client.ts` | `analyzeDocument(path: string): Promise<AnalyzeResponse>` — POST /api/rag/analyze |
-| `src/hooks/useDocuments.ts` | State: `path`, `loading`, `tasks`, `error`, `selectedIds`; actions: `analyze()`, `toggleTask()`, `addSelected()` |
-| `src/components/DocumentPanel.tsx` | Renders path input + Analyze button; loading spinner; task checklist; "Add N selected tasks" button |
+| `src/rag/client.ts` | `analyzeDocument(file: File): Promise<AnalyzeResponse>` — POST /api/rag/analyze as multipart |
+| `src/hooks/useDocuments.ts` | State: `file`, `loading`, `tasks`, `error`, `selectedIds`; actions: `analyze()`, `toggleTask()`, `addSelected()` |
+| `src/components/DocumentPanel.tsx` | Renders `<input type="file">` picker + Analyze button; loading spinner; task checklist; "Add N selected tasks" button |
 
 ### Modified files
 
@@ -125,13 +126,13 @@ You are a task extraction assistant. Given excerpts from a work document, identi
 | `src/App.tsx` | Add "Documents" tab; toggle `<DocumentPanel />` alongside existing todos/github views |
 | `src/types.ts` | Add `RagTask`, `AnalyzeResponse` types (mirrors backend models) |
 
-### Notes on file path input
+### File picker
 
-The app runs in a browser, so a native file picker is not available. The input is paste-only — the user copies a path from Windows Explorer and pastes it. A helper label reads: "Copy the file path from Windows Explorer (Shift+Right-click → Copy as path) and paste it here."
+Uses the browser's built-in `<input type="file" accept=".docx,.pdf,.txt">`. On Windows this opens the standard Windows "Open" dialog — no Electron or native integration needed. The selected file is held as a browser `File` object and uploaded as multipart to the backend; the full file path is never needed.
 
 ### Component states
 
-1. **Empty** — path input (paste-only), Analyze button, helper label, placeholder message
+1. **Empty** — "Choose file" button, accepted formats label, placeholder message
 2. **Loading** — spinner, path shown, button disabled
 3. **Results** — task list with checkboxes, source hints, "Add N selected tasks" button, "Select all" toggle
 4. **Error** — inline error message, path retained for retry
@@ -154,9 +155,8 @@ LLM_MODEL=claude-sonnet-4-6
 
 | Scenario | Behaviour |
 |----------|-----------|
-| File not found | 400 with clear message |
 | Unsupported file type | 400 with list of supported types |
-| File too large (>50MB) | 400 with size limit message |
+| File too large (>50MB) | 413 with size limit message |
 | OpenAI API failure | 500, surface error in UI |
 | LLM returns malformed JSON | Retry once, then 500 |
 | Empty document | Return empty task list with a message |
