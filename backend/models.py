@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel
 
 
@@ -100,3 +100,17 @@ class MergeResult(BaseModel):
 
 class LabelsResponse(BaseModel):
     labels: list[LabelItem]
+
+
+# ── RAG ────────────────────────────────────────────────────────────────────────
+
+class SuggestedTask(BaseModel):
+    title: str
+    category: Literal["work", "general", "personal", "urgent"]
+    source_hint: str
+    filename: str
+
+
+class AnalyzeResponse(BaseModel):
+    files_processed: int
+    tasks: list[SuggestedTask]
