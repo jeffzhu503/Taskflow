@@ -28,3 +28,9 @@ backend/.env
 backend/.venv
 backend/__pycache__
 backend/**/__pycache__
+
+# Git worktrees
+.worktrees/
+
+# Superpowers brainstorm files
+.superpowers/

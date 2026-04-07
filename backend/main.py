@@ -14,7 +14,7 @@ HTTPXClientInstrumentor().instrument()
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from routers import repo, issues, pulls, labels
+from routers import repo, issues, pulls, labels, rag
 from github import graphql_client, rest_client
 
 logger = logging.getLogger(__name__)
@@ -41,6 +41,7 @@ app.include_router(repo.router, prefix="/api")
 app.include_router(issues.router, prefix="/api")
 app.include_router(pulls.router, prefix="/api")
 app.include_router(labels.router, prefix="/api")
+app.include_router(rag.router, prefix="/api")
 
 FastAPIInstrumentor.instrument_app(app)
 

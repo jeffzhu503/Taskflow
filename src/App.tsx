@@ -5,9 +5,10 @@ import { AddForm } from './components/AddForm';
 import { TodoList } from './components/TodoList';
 import { Footer } from './components/Footer';
 import { GitHubPanel } from './components/github/GitHubPanel';
+import { DocumentPanel } from './components/DocumentPanel';
 import type { IssueItem } from './github/types';
 
-type AppView = 'todos' | 'github';
+type AppView = 'todos' | 'github' | 'documents';
 
 const FILTERS: { key: FilterType; label: string }[] = [
   { key: 'all',      label: 'All' },
@@ -56,6 +57,12 @@ export default function App() {
             onClick={() => setView('github')}
           >
             GitHub
+          </button>
+          <button
+            className={`view-tab${view === 'documents' ? ' active' : ''}`}
+            onClick={() => setView('documents')}
+          >
+            Documents
           </button>
         </div>
         <div className="date-chip">{DATE_LABEL}</div>
@@ -115,6 +122,10 @@ export default function App() {
 
       {view === 'github' && (
         <GitHubPanel onImportIssue={handleImportIssue} />
+      )}
+
+      {view === 'documents' && (
+        <DocumentPanel onAddTodo={(text, cat) => { addTodo(text, cat); setView('todos'); }} />
       )}
     </div>
   );
