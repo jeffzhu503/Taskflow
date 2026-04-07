@@ -3,6 +3,15 @@ import io
 import pytest
 import docx
 from fpdf import FPDF
+import rag.task_generator as _task_generator_mod
+
+
+@pytest.fixture(autouse=True)
+def reset_task_generator_client():
+    """Reset the singleton Anthropic client before each test for isolation."""
+    _task_generator_mod._client = None
+    yield
+    _task_generator_mod._client = None
 
 
 @pytest.fixture()

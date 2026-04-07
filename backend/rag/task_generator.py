@@ -1,7 +1,10 @@
 # backend/rag/task_generator.py
 import json
+import logging
 import anthropic
 from config import settings
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (
     "You are a task extraction assistant. Given excerpts from a work document, "
@@ -13,10 +16,20 @@ SYSTEM_PROMPT = (
 )
 
 
+_client: anthropic.AsyncAnthropic | None = None
+
+
+def _get_client() -> anthropic.AsyncAnthropic:
+    global _client
+    if _client is None:
+        _client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    return _client
+
+
 async def generate_tasks(chunks: list[str], filename: str) -> list[dict]:
     context = "\n\n---\n\n".join(chunks)
     user_msg = f"Document: {filename}\n\n{context}"
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    client = _get_client()
 
     for attempt in range(2):
         message = await client.messages.create(
@@ -31,6 +44,7 @@ async def generate_tasks(chunks: list[str], filename: str) -> list[dict]:
             if isinstance(tasks, list):
                 return tasks
         except (json.JSONDecodeError, IndexError):
+            logger.warning("LLM returned malformed JSON on attempt %d for %s", attempt + 1, filename)
             if attempt == 1:
                 raise ValueError(f"LLM returned malformed JSON after 2 attempts: {raw[:200]}")
 

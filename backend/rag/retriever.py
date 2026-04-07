@@ -14,6 +14,11 @@ class DocumentStore:
     )
     _seen: set[str] = field(default_factory=set)
 
+    def __post_init__(self) -> None:
+        for col in self._client.list_collections():
+            if col.name.startswith("d"):
+                self._seen.add(col.name[1:])
+
     def _collection(self, file_hash: str) -> chromadb.Collection:
         # ChromaDB collection names: alphanumeric + hyphens, 3-63 chars
         name = f"d{file_hash[:31]}"
